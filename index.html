@@ -199,7 +199,7 @@ body{
 .app-hero svg{width:38px;height:38px;color:var(--cyan);margin-bottom:12px;}
 .app-hero h2{font-size:22px;margin-bottom:8px;}
 .app-hero p{font-size:13px;color:var(--text2);line-height:1.6;max-width:560px;margin:0 auto;}
-.app-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:8px;}
+.app-actions{display:grid;grid-template-columns:1fr;gap:12px;margin-top:8px;}
 .app-action{
   display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);
   background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:14px;
@@ -410,22 +410,6 @@ body{
           <span>
             <span class="app-action-title">Acessar meu Painel</span>
             <span class="app-action-sub">Abrir o painel BI da Alkanse / Assaí.</span>
-          </span>
-        </button>
-
-        <button class="app-action" type="button" onclick="openDocuments()">
-          <span class="app-action-icon">📁</span>
-          <span>
-            <span class="app-action-title">Documentos</span>
-            <span class="app-action-sub">Relatórios, arquivos e entregas.</span>
-          </span>
-        </button>
-
-        <button class="app-action" type="button" onclick="openSupport()">
-          <span class="app-action-icon">🎫</span>
-          <span>
-            <span class="app-action-title">Chamados</span>
-            <span class="app-action-sub">Solicitações e suporte GPSBI.</span>
           </span>
         </button>
       </div>
@@ -648,8 +632,12 @@ function getUserDisplay(user){
 }
 
 function enterApp(user){
-  // Login (e confirmação de e-mail) levam direto pro painel — sem passar pelo portal.
-  window.location.href = CLIENT_PANEL_URL;
+  const display = getUserDisplay(user);
+  currentUserEmail = display.email;
+  document.getElementById('authWrap').style.display = 'none';
+  document.getElementById('screen-app').style.display = 'flex';
+  document.getElementById('userAvatar').textContent = display.initials;
+  document.getElementById('userChipName').textContent = display.name;
 }
 
 
