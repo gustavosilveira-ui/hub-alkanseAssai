@@ -290,10 +290,6 @@ body{
 
         <button class="btn-primary" id="loginBtn" onclick="doLogin()">Entrar →</button>
         <div class="form-error" id="loginError">Usuário ou senha incorretos.</div>
-
-        <div style="text-align:center;margin-top:18px;font-size:11px;color:var(--text3);">
-          Primeiro acesso? <button class="link-btn" onclick="showScreen('activate')">Criar minha senha</button>
-        </div>
       </div>
 
       <!-- ---------- FORGOT PASSWORD ---------- -->
@@ -320,7 +316,6 @@ body{
           Enviamos um link de redefinição para<br><b class="mono" id="forgotSentEmail" style="color:var(--text);"></b>.
           O link expira em 30 minutos.
         </div>
-        <button class="btn-primary" onclick="simulateOpenResetLink()">Abrir link de redefinição →</button>
         <button class="btn-secondary" onclick="doForgot(true)">Reenviar e-mail</button>
         <div style="text-align:center;margin-top:16px;">
           <button class="link-btn" onclick="showScreen('login')">Voltar pro login</button>
@@ -333,10 +328,9 @@ body{
         <div class="ar-title" id="resetTitle">Crie sua nova senha</div>
         <div class="ar-sub" id="resetSub">Escolha uma senha forte, com pelo menos 8 caracteres.</div>
 
-        <div class="fg" id="fg-activate-email" style="display:none;">
+        <div class="fg" id="fg-activate-email">
           <label>E-mail de acesso</label>
-          <input type="email" id="activateEmail" placeholder="cliente@empresa.com.br" autocomplete="username">
-          <div class="fg-error-msg">Informe o e-mail que será usado para acessar o Hub.</div>
+          <input type="email" id="activateEmail" readonly>
         </div>
 
         <div class="fg" id="fg-reset-pass">
@@ -479,21 +473,14 @@ const APP_URL = 'https://hub-alkanse-assai.vercel.app';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let pendingResetEmail = null;
-let resetMode = 'reset'; // 'reset' | 'activate'
+let resetMode = 'reset'; // 'reset' (esqueci senha) | 'invite' (primeiro acesso via convite)
 let currentUserEmail = null;
 
 // ---------------- SCREEN SWITCHING ----------------
 function showScreen(name){
   document.querySelectorAll('.screen').forEach(el => el.style.display = 'none');
   clearAllErrors();
-  if(name === 'activate'){
-    resetMode = 'activate';
-    setupResetScreen();
-    document.getElementById('screen-reset').style.display = 'block';
-    return;
-  }
   if(name === 'reset'){
-    resetMode = 'reset';
     setupResetScreen();
     document.getElementById('screen-reset').style.display = 'block';
     return;
@@ -508,24 +495,17 @@ function setupResetScreen(){
   const sub = document.getElementById('resetSub');
   document.getElementById('resetPass').value = '';
   document.getElementById('resetConfirm').value = '';
-  const activateEmailFg = document.getElementById('fg-activate-email');
-  const activateEmail = document.getElementById('activateEmail');
+  document.getElementById('activateEmail').value = pendingResetEmail || '';
   checkPwStrength();
-  if(resetMode === 'activate'){
+  if(resetMode === 'invite'){
     eyebrow.textContent = 'Primeiro acesso';
-    title.textContent = 'Crie seu acesso';
-    sub.textContent = 'Informe seu e-mail e defina uma senha pessoal para acessar o Hub.';
-    activateEmailFg.style.display = 'block';
-    activateEmail.value = pendingResetEmail || '';
-    document.getElementById('resetBtn').textContent = 'Criar meu acesso';
+    title.textContent = 'Crie sua senha';
+    sub.textContent = 'Você foi convidado para acessar o Hub. Defina sua senha pessoal para continuar.';
+    document.getElementById('resetBtn').textContent = 'Criar minha senha';
   } else {
     eyebrow.textContent = 'Redefinição de senha';
     title.textContent = 'Crie sua nova senha';
-    sub.textContent = pendingResetEmail
-      ? `Redefinindo senha para ${pendingResetEmail}. Escolha uma senha forte.`
-      : 'Escolha uma senha forte, com pelo menos 8 caracteres.';
-    activateEmailFg.style.display = 'none';
-    activateEmail.value = '';
+    sub.textContent = 'Escolha uma senha forte, com pelo menos 8 caracteres.';
     document.getElementById('resetBtn').textContent = 'Salvar nova senha';
   }
 }
@@ -737,13 +717,6 @@ async function doForgot(isResend){
   showScreen('forgot-sent');
 }
 
-function simulateOpenResetLink(){
-  showScreen('login');
-  const err = document.getElementById('loginError');
-  err.textContent = 'Agora o link real será enviado por e-mail pelo Supabase.';
-  err.classList.add('show');
-}
-
 // ---------------- RESET / ACTIVATE PASSWORD ----------------
 async function doReset(){
   clearAllErrors();
@@ -752,15 +725,8 @@ async function doReset(){
   const errEl = document.getElementById('resetError');
   const btn = document.getElementById('resetBtn');
   const strength = checkPwStrength();
-  const accessEmail = resetMode === 'activate'
-    ? document.getElementById('activateEmail').value.trim().toLowerCase()
-    : pendingResetEmail;
 
   let bad = false;
-  if(resetMode === 'activate' && !isValidEmail(accessEmail)){
-    setFieldError('fg-activate-email', true);
-    bad = true;
-  }
   if(!strength.hasLen || !strength.hasCase || !strength.hasNum){
     errEl.textContent = 'Sua senha precisa atender aos requisitos acima.';
     errEl.classList.add('show');
@@ -772,26 +738,13 @@ async function doReset(){
   }
   if(bad) return;
 
-  setButtonLoading(btn, true, resetMode === 'activate' ? 'Criando acesso...' : 'Salvando...');
+  setButtonLoading(btn, true, resetMode === 'invite' ? 'Criando senha...' : 'Salvando...');
 
-  let error = null;
-  if(resetMode === 'activate'){
-    const result = await supabaseClient.auth.signUp({
-      email: accessEmail,
-      password: pass,
-      options: {
-        emailRedirectTo: APP_URL,
-        data: { nome: 'Cliente Alkanse', empresa: 'Alkanse' }
-      }
-    });
-    error = result.error;
-    if(!error) document.getElementById('loginEmail').value = accessEmail;
-  } else {
-    const result = await supabaseClient.auth.updateUser({ password: pass });
-    error = result.error;
-  }
+  // O usuário já chegou aqui autenticado via link de convite/recuperação do Supabase,
+  // então é sempre uma atualização de senha — nunca um cadastro novo (signUp).
+  const { error } = await supabaseClient.auth.updateUser({ password: pass });
 
-  setButtonLoading(btn, false, resetMode === 'activate' ? 'Criar meu acesso' : 'Salvar nova senha');
+  setButtonLoading(btn, false, resetMode === 'invite' ? 'Criar minha senha' : 'Salvar nova senha');
 
   if(error){
     errEl.textContent = translateAuthError(error.message);
@@ -800,7 +753,7 @@ async function doReset(){
   }
 
   document.getElementById('resetSuccessTitle').textContent =
-    resetMode === 'activate' ? 'Acesso criado!' : 'Senha redefinida!';
+    resetMode === 'invite' ? 'Senha criada!' : 'Senha redefinida!';
   showScreen('reset-success');
 }
 
@@ -868,6 +821,15 @@ async function initAuth(){
       return;
     }
     if(session?.user && event === 'SIGNED_IN'){
+      if(isInviteLink()){
+        resetMode = 'invite';
+        pendingResetEmail = session.user.email;
+        document.getElementById('authWrap').style.display = 'block';
+        document.getElementById('screen-app').style.display = 'none';
+        setupResetScreen();
+        showScreen('reset');
+        return;
+      }
       enterApp(session.user);
     }
   });
@@ -887,11 +849,25 @@ async function initAuth(){
     return;
   }
 
+  if(isInviteLink() && session?.user){
+    resetMode = 'invite';
+    pendingResetEmail = session.user.email;
+    setupResetScreen();
+    showScreen('reset');
+    return;
+  }
+
   if(session?.user){
     enterApp(session.user);
   } else {
     showScreen('login');
   }
+}
+
+function isInviteLink(){
+  const hash = window.location.hash || '';
+  const query = window.location.search || '';
+  return hash.includes('type=invite') || query.includes('type=invite');
 }
 
 initAuth();
