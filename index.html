@@ -309,6 +309,7 @@ body{
         </div>
 
         <button class="btn-primary" id="forgotBtn" onclick="doForgot()">Enviar link de redefinição</button>
+        <div class="form-error" id="forgotError"></div>
       </div>
 
       <!-- ---------- FORGOT: SENT CONFIRMATION ---------- -->
@@ -537,6 +538,27 @@ function clearAllErrors(){
 
 // ---------------- VALIDATION HELPERS ----------------
 function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+
+// ---------------- TRADUÇÃO DE ERROS DO SUPABASE ----------------
+function translateAuthError(msg){
+  if(!msg) return 'Não foi possível concluir. Tente novamente.';
+  const m = msg.toLowerCase();
+  const map = [
+    [/new password should be different from the old password/, 'A nova senha precisa ser diferente da senha atual.'],
+    [/password should be at least/, 'A senha precisa ter pelo menos 8 caracteres.'],
+    [/password is too weak|weak password/, 'Essa senha é muito fraca. Tente uma combinação mais forte.'],
+    [/user already registered|already registered|email.*already.*use/, 'Esse e-mail já está cadastrado. Tente fazer login ou recuperar a senha.'],
+    [/invalid login credentials/, 'Usuário ou senha incorretos.'],
+    [/email not confirmed/, 'Confirme seu e-mail antes de entrar.'],
+    [/email rate limit exceeded|rate limit/, 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente de novo.'],
+    [/unable to validate email address|invalid email/, 'Informe um e-mail válido.'],
+    [/token has expired|expired|invalid.*token/, 'Esse link expirou ou já foi usado. Solicite um novo.'],
+    [/user not found/, 'Não encontramos uma conta com esse e-mail.'],
+    [/network|fetch failed|failed to fetch/, 'Falha de conexão. Verifique sua internet e tente novamente.'],
+  ];
+  for(const [re, pt] of map){ if(re.test(m)) return pt; }
+  return 'Não foi possível concluir. Tente novamente. (' + msg + ')';
+}
 function setFieldError(fgId, hasError){
   const el = document.getElementById(fgId);
   if(el) el.classList.toggle('has-error', hasError);
@@ -690,6 +712,7 @@ async function doForgot(isResend){
   clearAllErrors();
   const emailEl = document.getElementById('forgotEmail');
   const btn = document.getElementById('forgotBtn');
+  const errEl2 = document.getElementById('forgotError');
   const email = (emailEl.value.trim() || pendingResetEmail || '').toLowerCase();
 
   if(!isResend && !isValidEmail(email)){
@@ -704,7 +727,8 @@ async function doForgot(isResend){
   setButtonLoading(btn, false, 'Enviar link de redefinição');
 
   if(error){
-    setFieldError('fg-forgot-email', true);
+    errEl2.textContent = translateAuthError(error.message);
+    errEl2.classList.add('show');
     return;
   }
 
@@ -770,7 +794,7 @@ async function doReset(){
   setButtonLoading(btn, false, resetMode === 'activate' ? 'Criar meu acesso' : 'Salvar nova senha');
 
   if(error){
-    errEl.textContent = error.message || 'Não foi possível concluir. Tente novamente.';
+    errEl.textContent = translateAuthError(error.message);
     errEl.classList.add('show');
     return;
   }
@@ -823,7 +847,7 @@ async function doChangePassword(){
 
   const { error } = await supabaseClient.auth.updateUser({ password: next });
   if(error){
-    errEl.textContent = error.message || 'Não foi possível alterar a senha.';
+    errEl.textContent = translateAuthError(error.message);
     errEl.classList.add('show');
     return;
   }
