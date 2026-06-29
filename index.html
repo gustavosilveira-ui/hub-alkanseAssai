@@ -648,12 +648,8 @@ function getUserDisplay(user){
 }
 
 function enterApp(user){
-  const display = getUserDisplay(user);
-  currentUserEmail = display.email;
-  document.getElementById('authWrap').style.display = 'none';
-  document.getElementById('screen-app').style.display = 'flex';
-  document.getElementById('userAvatar').textContent = display.initials;
-  document.getElementById('userChipName').textContent = display.name;
+  // Login (e confirmação de e-mail) levam direto pro painel — sem passar pelo portal.
+  window.location.href = CLIENT_PANEL_URL;
 }
 
 
