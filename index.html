@@ -290,6 +290,10 @@ body{
 
         <button class="btn-primary" id="loginBtn" onclick="doLogin()">Entrar →</button>
         <div class="form-error" id="loginError">Usuário ou senha incorretos.</div>
+
+        <div style="text-align:center;margin-top:18px;font-size:11px;color:var(--text3);">
+          Primeiro acesso? <button class="link-btn" onclick="showScreen('activate')">Criar minha conta</button>
+        </div>
       </div>
 
       <!-- ---------- FORGOT PASSWORD ---------- -->
@@ -331,6 +335,7 @@ body{
         <div class="fg" id="fg-activate-email">
           <label>E-mail de acesso</label>
           <input type="email" id="activateEmail" readonly>
+          <div class="fg-error-msg" id="activateEmailError">E-mail corporativo inválido.</div>
         </div>
 
         <div class="fg" id="fg-reset-pass">
@@ -364,7 +369,7 @@ body{
       <div class="screen" id="screen-reset-success" style="display:none;">
         <div class="icon-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg></div>
         <div class="ar-title center-text" id="resetSuccessTitle">Senha criada!</div>
-        <div class="ar-sub center-text">Seu acesso foi atualizado com sucesso. Já pode entrar no Hub normalmente.</div>
+        <div class="ar-sub center-text" id="resetSuccessSub">Seu acesso foi atualizado com sucesso. Já pode entrar no Hub normalmente.</div>
         <button class="btn-primary" onclick="showScreen('login')">Ir para o login →</button>
       </div>
 
@@ -472,14 +477,28 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const APP_URL = 'https://hub-alkanse-assai.vercel.app';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Domínios corporativos liberados pra autocadastro (validação client-side;
+// a validação que realmente protege roda no Auth Hook do Supabase, server-side).
+const ALLOWED_SIGNUP_DOMAINS = ['assai.com.br', 'grupofb.com.br', 'gpsbi.com.br'];
+function isAllowedSignupEmail(email){
+  const domain = (email.split('@')[1] || '').toLowerCase();
+  return ALLOWED_SIGNUP_DOMAINS.includes(domain);
+}
+
 let pendingResetEmail = null;
-let resetMode = 'reset'; // 'reset' (esqueci senha) | 'invite' (primeiro acesso via convite)
+let resetMode = 'reset'; // 'reset' (esqueci senha) | 'invite' (convite admin) | 'activate' (autocadastro)
 let currentUserEmail = null;
 
 // ---------------- SCREEN SWITCHING ----------------
 function showScreen(name){
   document.querySelectorAll('.screen').forEach(el => el.style.display = 'none');
   clearAllErrors();
+  if(name === 'activate'){
+    resetMode = 'activate';
+    setupResetScreen();
+    document.getElementById('screen-reset').style.display = 'block';
+    return;
+  }
   if(name === 'reset'){
     setupResetScreen();
     document.getElementById('screen-reset').style.display = 'block';
@@ -493,19 +512,31 @@ function setupResetScreen(){
   const eyebrow = document.getElementById('resetEyebrow');
   const title = document.getElementById('resetTitle');
   const sub = document.getElementById('resetSub');
+  const emailField = document.getElementById('activateEmail');
   document.getElementById('resetPass').value = '';
   document.getElementById('resetConfirm').value = '';
-  document.getElementById('activateEmail').value = pendingResetEmail || '';
   checkPwStrength();
-  if(resetMode === 'invite'){
+  if(resetMode === 'activate'){
+    eyebrow.textContent = 'Primeiro acesso';
+    title.textContent = 'Crie sua conta';
+    sub.textContent = `Use seu e-mail corporativo (${ALLOWED_SIGNUP_DOMAINS.map(d=>'@'+d).join(' ou ')}) e defina sua senha.`;
+    emailField.value = '';
+    emailField.readOnly = false;
+    emailField.placeholder = 'voce@assai.com.br';
+    document.getElementById('resetBtn').textContent = 'Criar minha conta';
+  } else if(resetMode === 'invite'){
     eyebrow.textContent = 'Primeiro acesso';
     title.textContent = 'Crie sua senha';
     sub.textContent = 'Você foi convidado para acessar o Hub. Defina sua senha pessoal para continuar.';
+    emailField.value = pendingResetEmail || '';
+    emailField.readOnly = true;
     document.getElementById('resetBtn').textContent = 'Criar minha senha';
   } else {
     eyebrow.textContent = 'Redefinição de senha';
     title.textContent = 'Crie sua nova senha';
     sub.textContent = 'Escolha uma senha forte, com pelo menos 8 caracteres.';
+    emailField.value = pendingResetEmail || '';
+    emailField.readOnly = true;
     document.getElementById('resetBtn').textContent = 'Salvar nova senha';
   }
 }
@@ -725,8 +756,21 @@ async function doReset(){
   const errEl = document.getElementById('resetError');
   const btn = document.getElementById('resetBtn');
   const strength = checkPwStrength();
+  const email = document.getElementById('activateEmail').value.trim().toLowerCase();
 
   let bad = false;
+  if(resetMode === 'activate'){
+    if(!isValidEmail(email)){
+      setFieldError('fg-activate-email', true);
+      document.getElementById('activateEmailError').textContent = 'Informe um e-mail válido.';
+      bad = true;
+    } else if(!isAllowedSignupEmail(email)){
+      setFieldError('fg-activate-email', true);
+      document.getElementById('activateEmailError').textContent =
+        `Cadastro permitido apenas para e-mails ${ALLOWED_SIGNUP_DOMAINS.map(d=>'@'+d).join(' ou ')}.`;
+      bad = true;
+    }
+  }
   if(!strength.hasLen || !strength.hasCase || !strength.hasNum){
     errEl.textContent = 'Sua senha precisa atender aos requisitos acima.';
     errEl.classList.add('show');
@@ -738,13 +782,28 @@ async function doReset(){
   }
   if(bad) return;
 
-  setButtonLoading(btn, true, resetMode === 'invite' ? 'Criando senha...' : 'Salvando...');
+  const loadingLabel = resetMode === 'activate' ? 'Criando conta...' : resetMode === 'invite' ? 'Criando senha...' : 'Salvando...';
+  setButtonLoading(btn, true, loadingLabel);
 
-  // O usuário já chegou aqui autenticado via link de convite/recuperação do Supabase,
-  // então é sempre uma atualização de senha — nunca um cadastro novo (signUp).
-  const { error } = await supabaseClient.auth.updateUser({ password: pass });
+  let error;
+  if(resetMode === 'activate'){
+    // Autocadastro: ninguém estava logado ainda, então aqui é signUp de verdade.
+    // A validação que protege de fato roda no Auth Hook "before-user-created" do Supabase.
+    const result = await supabaseClient.auth.signUp({
+      email,
+      password: pass,
+      options: { emailRedirectTo: CLIENT_PANEL_URL }
+    });
+    error = result.error;
+  } else {
+    // Convite ou redefinição: o usuário já chegou autenticado via link do Supabase,
+    // então é sempre uma atualização de senha — nunca um cadastro novo.
+    const result = await supabaseClient.auth.updateUser({ password: pass });
+    error = result.error;
+  }
 
-  setButtonLoading(btn, false, resetMode === 'invite' ? 'Criar minha senha' : 'Salvar nova senha');
+  const idleLabel = resetMode === 'activate' ? 'Criar minha conta' : resetMode === 'invite' ? 'Criar minha senha' : 'Salvar nova senha';
+  setButtonLoading(btn, false, idleLabel);
 
   if(error){
     errEl.textContent = translateAuthError(error.message);
@@ -752,8 +811,18 @@ async function doReset(){
     return;
   }
 
+  if(resetMode === 'activate'){
+    document.getElementById('resetSuccessTitle').textContent = 'Verifique seu e-mail';
+    document.getElementById('resetSuccessSub').textContent =
+      `Enviamos um link de confirmação para ${email}. Clique nele para concluir seu acesso.`;
+    showScreen('reset-success');
+    return;
+  }
+
   document.getElementById('resetSuccessTitle').textContent =
     resetMode === 'invite' ? 'Senha criada!' : 'Senha redefinida!';
+  document.getElementById('resetSuccessSub').textContent =
+    'Seu acesso foi atualizado com sucesso. Já pode entrar no Hub normalmente.';
   showScreen('reset-success');
 }
 
